@@ -12,6 +12,12 @@ service cloud.firestore {
         && request.resource.data.createdAt != null;
       allow update, delete: if request.auth != null
         && resource.data.authorId == request.auth.uid;
+      
+      // likes 서브컬렉션 권한 추가
+      match /likes/{userId} {
+        allow read: if true;
+        allow create, delete: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     match /comments/{commentId} {
