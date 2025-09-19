@@ -2,7 +2,7 @@
 import { useLocalSearchParams } from "expo-router";
 
 import { useEffect, useState } from "react";
-import { View, Text, TextInput, Button, Alert } from "react-native";
+import { View, Text, TextInput, Alert } from "react-native";
 import { auth } from "../../src/lib/firebase";
 //import { deletePostAndComments, toggleLikeRobust } from "../../src/lib/posts";
 import { useRouter } from "expo-router";
@@ -18,6 +18,9 @@ import {
   deletePostAndComments,
   Comment
 } from "../../src/lib/posts";
+
+import Button from "../../src/components/common/Button";
+import { colors, typography, spacing, borderRadius } from "../../src/styles/theme";
 
 const router = useRouter();
 
@@ -38,57 +41,71 @@ export default function PostDetail() {
   }, [id]);
 
   if (!post) {
-    return <View style={{ padding: 16 }}><Text>불러오는 중...</Text></View>;
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background.surface, padding: spacing.lg }}>
+        <Text style={[typography.body]}>불러오는 중...</Text>
+      </View>
+    );
   }
 
   // ⬅️ ① 작성 일시 문자열 (서울/KST)
   const createdLabel = formatKST(post.createdAt);
 
   return (
-    <View style={{ flex: 1, padding: 16, gap: 12 }}>
+    <View style={{ flex: 1, backgroundColor: colors.background.surface, padding: spacing.lg, gap: spacing.md }}>
       {/* 제목 */}
-      <Text style={{ fontSize: 20, fontWeight: "bold" }}>{post.title}</Text>
+      <Text style={[typography.h3, { color: colors.text.primary }]}>{post.title}</Text>
 
       {/* ⬅️ ① 작성 일시 표시 (제목 아래) */}
-      <Text style={{ fontSize: 12, color: "#666" }}>작성: {createdLabel}</Text>
+      <Text style={[typography.caption, { color: colors.text.secondary }]}>작성: {createdLabel}</Text>
 
       {/* ⬅️ ③ 본문 가독성 개선: 줄간, 여백, 색상 */}
-      <Text style={{ lineHeight: 22, color: "#333", marginTop: 8 }}>
+      <Text style={[typography.body, { color: colors.text.secondary, lineHeight: 22, marginTop: spacing.sm }]}>
         {post.body}
       </Text>
 
       {/* 배운 점 강조 */}
-      <Text style={{ marginTop: 8, fontStyle: "italic", color: "#444" }}>
-        배운 점: {post.lessons}
-      </Text>
+      <View style={{
+        backgroundColor: colors.surface,
+        padding: spacing.md,
+        borderRadius: borderRadius.md,
+        marginTop: spacing.sm,
+        borderLeftWidth: 4,
+        borderLeftColor: colors.accent,
+      }}>
+        <Text style={[typography.bodySmall, { color: colors.text.accent, fontWeight: '600' }]}>🎯 핵심 교훈</Text>
+        <Text style={[typography.quote, { color: colors.text.accent, marginTop: spacing.xs }]}>
+          {post.lessons}
+        </Text>
+      </View>
 
       {/* ⬅️ ② 태그 배지 (있을 때만) */}
       {post.tags?.length ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm }}>
           {post.tags.map((t) => (
             <View
               key={t}
               style={{
-                paddingHorizontal: 8,
-                paddingVertical: 4,
-                borderRadius: 12,
-                backgroundColor: "#f2f2f2"
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.xs,
+                borderRadius: borderRadius.full,
+                backgroundColor: colors.secondary
               }}
             >
-              <Text style={{ fontSize: 12, color: "#555" }}>#{t}</Text>
+              <Text style={[typography.caption, { color: colors.text.primary }]}>#{t}</Text>
             </View>
           ))}
         </View>
       ) : null}
 
       {/* 메타: 공감/댓글 수 */}
-      <Text style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
+      <Text style={[typography.caption, { marginTop: spacing.xs, color: colors.text.secondary }]}>
         공감 {post.likeCount ?? 0} · 댓글 {post.commentCount ?? 0}
       </Text>
 
       {/* 공감 & 신고 버튼 */}
-      <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-        <Button title="공감" onPress={async () => {
+      <View style={{ flexDirection: 'row', columnGap: spacing.sm, marginTop: spacing.xs }}>
+        <Button title="공감" size="sm" style={{ backgroundColor: colors.accent, borderColor: colors.accent }} onPress={async () => {
           try {
             await ensureAnonSignIn();             // ✅
             await toggleLikeRobust(post.id);
@@ -96,10 +113,11 @@ export default function PostDetail() {
             console.error(e);
              Alert.alert("오류", e?.message ?? "공감 실패");
           }
-        }}
-      />
+        }} />
         <Button
           title="신고"
+          variant="secondary"
+          size="sm"
           onPress={async () => {
             try {
               await ensureAnonSignIn();
@@ -111,38 +129,32 @@ export default function PostDetail() {
           }}
         />
 
-        {post.authorId && auth.currentUser?.uid === post.authorId && (
-          <Button color="#c00" title="삭제" onPress={() => {
-            Alert.alert("삭제", "정말 삭제할까요?", [
+        <Button
+          title="붙이기"
+          size="sm"
+          style={{ backgroundColor: colors.secondary, borderColor: colors.secondary }}
+          onPress={() => {
+            Alert.alert("붙이기", "이 실패담을 다른 실패담과 연결하시겠습니까?", [
               { text: "취소", style: "cancel" },
-              { text: "삭제", style: "destructive", onPress: async () => {
-                try {
-                  await ensureAnonSignIn();      // ✅
-                  await deletePostAndComments(post.id);
-                  Alert.alert("삭제되었습니다.");
-                  router.back(); // 목록으로 돌아가기
-                } catch (e: any) {
-                  console.error(e);
-                  Alert.alert("오류", e?.message ?? "삭제 실패");
-                }
-                },
-              },
+              { text: "붙이기", onPress: () => {
+                // 향후 붙이기 기능 구현 예정
+                Alert.alert("알림", "붙이기 기능은 준비 중입니다.");
+              }},
             ]);
           }}
         />
-      )}
       </View>
 
       {/* 구분선 */}
-      <View style={{ height: 1, backgroundColor: "#eee", marginVertical: 8 }} />
+      <View style={{ height: 1, backgroundColor: colors.gray[200], marginVertical: spacing.md }} />
 
       {/* 댓글 리스트 */}
-      <Text style={{ fontWeight: "bold" }}>댓글</Text>
+      <Text style={[typography.h4, { color: colors.text.primary }]}>댓글</Text>
       {comments.map((c) => (
-        <View key={c.id} style={{ paddingVertical: 6 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ lineHeight: 20 }}>{c.body}</Text>
-            <Text style={{ fontSize: 11, color: "#888", marginLeft: 8 }}>
+        <View key={c.id} style={{ paddingVertical: spacing.sm }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={[typography.body, { color: colors.text.primary, lineHeight: 20 }]}>{c.body}</Text>
+            <Text style={[typography.small, { color: colors.text.secondary, marginLeft: spacing.sm }]}>
               {formatKST(c.createdAt)}  {/* ✅ 댓글 시각 */}
             </Text>
           </View>
@@ -154,10 +166,19 @@ export default function PostDetail() {
         placeholder="댓글 남기기"
         value={comment}
         onChangeText={setComment}
-        style={{ borderWidth: 1, borderColor: "#ddd", padding: 12, borderRadius: 8 }}
+        style={{
+          borderWidth: 1,
+          borderColor: colors.gray[300],
+          padding: spacing.md,
+          borderRadius: borderRadius.md,
+          color: colors.text.primary,
+          backgroundColor: colors.background.light,
+        }}
       />
       <Button
         title={busy ? "등록 중..." : "등록"}
+        size="sm"
+        style={{ backgroundColor: colors.accent, borderColor: colors.accent }}
         onPress={async () => {
           const text = comment.trim();
           if (!text) {

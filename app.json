@@ -2,8 +2,13 @@
   "expo": {
     "name": "small-failures-starter",
     "slug": "small-failures-starter",
-    "plugins": ["expo-router"],
-    "experiments": { "typedRoutes": true },    
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
