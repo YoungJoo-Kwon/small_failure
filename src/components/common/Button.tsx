@@ -15,6 +15,7 @@ interface ButtonProps {
   icon?: React.ReactNode;
   style?: ViewStyle;
   textStyle?: TextStyle;
+  titleStyle?: TextStyle;
 }
 
 export default function Button({

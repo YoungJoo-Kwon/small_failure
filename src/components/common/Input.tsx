@@ -83,6 +83,7 @@ export default function Input({
             fontWeight: '600',
             color: colors.text.primary,
             marginBottom: spacing.sm,
+            fontFamily: typography.bodySmall.fontFamily,
           }}
         >
           {label}

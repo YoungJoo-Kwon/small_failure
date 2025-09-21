@@ -24,7 +24,16 @@ export type Post = {
 export type Comment = {
   id: string;
   postId: string;
-  body: string;
+  body?: string;
+  type?: "text" | "attach";
+
+  // ✅ attach 타입일 때만 쓰는 필드들
+  attachedPostId?: string;
+  attachedTitle?: string;
+  attachedSnippet?: string;
+  attachedLessons?: string;
+  attachedImageUrl?: string | null;
+
   createdAt?: any;
   authorId?: string | null;
   isAnonymous?: boolean;
@@ -73,6 +82,7 @@ export async function createPost(opts: {
 
   await addDoc(collection(db, "posts"), {
     title: opts.title,
+    titleLower: opts.title.toLowerCase(), // ✅ 추가
     body: opts.body,
     lessons: opts.lessons,
     tags: opts.tags || [],
@@ -84,6 +94,33 @@ export async function createPost(opts: {
     createdAt: serverTimestamp(),
     status: "active"
   });
+}
+
+export function searchPostsByTitlePrefix(prefix: string, cb: (posts: Post[]) => void) {
+  const key = prefix.toLowerCase();
+  const end = key + '\uf8ff'; // prefix 범위
+  const q = query(
+    collection(db, "posts"),
+    where("titleLower", ">=", key),
+    where("titleLower", "<=", end),
+    orderBy("titleLower"),
+    limit(20)
+  );
+  return onSnapshot(q, (snap) =>
+    cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+  );
+}
+
+export function searchByTag(tag: string, cb: (posts: Post[]) => void) {
+  const q = query(
+    collection(db, "posts"),
+    where("tags", "array-contains", tag),
+    orderBy("createdAt", "desc"),
+    limit(20)
+  );
+  return onSnapshot(q, (snap) =>
+    cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+  );
 }
 
 // 글과 그에 속한 댓글을 함께 삭제(하드 삭제)
@@ -173,5 +210,54 @@ export async function toggleLikeRobust(postId: string) {
       tx.set(likeRef, { userId: uid, createdAt: serverTimestamp() });
       tx.update(postRef, { likeCount: current + 1 });
     }
+  });
+}
+
+export function listenMyPosts(uid: string, cb: (posts: Post[]) => void, onErr?: (e:any)=>void) {
+  const qy = query(
+    collection(db, "posts"),
+    where("authorId", "==", uid),
+    limit(50)
+  );
+  return onSnapshot(qy,
+    (snap) => cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))),
+    (e) => onErr?.(e)  // ✅ 에러 핸들링해서 토스트/Alert로 알려주기
+  );
+}
+
+// ✅ 다른 실패담을 댓글로 '붙이기'
+export async function addAttachComment(parentPostId: string, childPostId: string) {
+  const uid = auth.currentUser?.uid ?? null;
+
+  // child 미리보기 데이터 한 번 읽어서 댓글에 '정규화(denormalize)'
+  const childRef = doc(db, "posts", childPostId);
+  const snap = await getDoc(childRef);
+  if (!snap.exists()) throw new Error("붙일 실패담을 찾을 수 없습니다.");
+  const child = snap.data() as any;
+
+  // 미리보기용 스니펫 (본문 앞 100~140자 정도 잘라 저장)
+  const raw = (child.body ?? "").toString();
+  const snippet = raw.length > 140 ? raw.slice(0, 140) + "…" : raw;
+
+  // 댓글 컬렉션에 attach 타입으로 저장
+  await addDoc(collection(db, "comments"), {
+    postId: parentPostId,
+    type: "attach",
+    body: "",                            // ✅ 비어 있어도 필드는 채움
+    attachedPostId: childPostId,
+    attachedTitle: child.title ?? "",
+    attachedSnippet: snippet,
+    attachedLessons: child.lessons ?? "",
+    attachedImageUrl: child.imageUrl ?? null,
+    authorId: uid,
+    isAnonymous: true,
+    createdAt: serverTimestamp(),
+  });
+
+  // 부모 글의 attachCount(표시용) 증가 (선택)
+  const pref = doc(db, "posts", parentPostId);
+  await updateDoc(pref, { 
+    attachCount: increment(1),
+    commentCount: increment(1), 
   });
 }

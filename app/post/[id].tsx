@@ -1,14 +1,13 @@
 // app/post/[id].tsx
 import { useLocalSearchParams } from "expo-router";
-
 import { useEffect, useState } from "react";
 import { View, Text, TextInput, Alert } from "react-native";
 import { auth } from "../../src/lib/firebase";
 //import { deletePostAndComments, toggleLikeRobust } from "../../src/lib/posts";
 import { useRouter } from "expo-router";
 import { ensureAnonSignIn } from "../../src/lib/auth";
-
 import { formatKST } from "../../src/lib/datetime";              // ⬅️ ① 작성 일시 포맷 유틸
+
 import {
   getPost,           // 실시간 구독
   toggleLikeRobust,        // 공감
@@ -16,11 +15,15 @@ import {
   reportPost,        // 신고
   Post, 
   deletePostAndComments,
-  Comment
+  addAttachComment, 
+  Comment, 
 } from "../../src/lib/posts";
 
 import Button from "../../src/components/common/Button";
+import Card from "../../src/components/common/Card"; // ✅ 추가
 import { colors, typography, spacing, borderRadius } from "../../src/styles/theme";
+
+import AttachModal from "../../src/components/attach/AttachModal";
 
 const router = useRouter();
 
@@ -30,6 +33,7 @@ export default function PostDetail() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -52,7 +56,14 @@ export default function PostDetail() {
   const createdLabel = formatKST(post.createdAt);
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background.surface, padding: spacing.lg, gap: spacing.md }}>
+    <View style={{ flex: 1, backgroundColor: colors.background.surface, padding: spacing.lg, gap: spacing.md}}>
+      {/* ====== 본문 카드 ====== */}
+      <Card
+        style={{
+          padding: spacing.lg,
+          backgroundColor: colors.background.light, // ✅ “하얀 박스” 느낌 보장
+        }}
+      >  
       {/* 제목 */}
       <Text style={[typography.h3, { color: colors.text.primary }]}>{post.title}</Text>
 
@@ -133,70 +144,161 @@ export default function PostDetail() {
           title="붙이기"
           size="sm"
           style={{ backgroundColor: colors.secondary, borderColor: colors.secondary }}
-          onPress={() => {
-            Alert.alert("붙이기", "이 실패담을 다른 실패담과 연결하시겠습니까?", [
-              { text: "취소", style: "cancel" },
-              { text: "붙이기", onPress: () => {
-                // 향후 붙이기 기능 구현 예정
-                Alert.alert("알림", "붙이기 기능은 준비 중입니다.");
-              }},
-            ]);
+          onPress={async () => {
+            await ensureAnonSignIn();    // ✅ 먼저 보장
+            setAttachOpen(true);
+          }}
+        />
+
+        <AttachModal
+          visible={attachOpen}
+          excludeId={post.id}
+          onClose={()=>setAttachOpen(false)}
+          onSelect={async (childId) => {
+            try {
+              await ensureAnonSignIn();
+              await addAttachComment(post.id, childId);
+              setAttachOpen(false);
+              Alert.alert("완료", "실패담을 이어붙였습니다.");
+            } catch (e:any) {
+              console.error("addAttachComment failed:", e); 
+              Alert.alert("오류", e?.message ?? "붙이기 실패");
+            }
           }}
         />
       </View>
+    </Card>
 
-      {/* 구분선 */}
-      <View style={{ height: 1, backgroundColor: colors.gray[200], marginVertical: spacing.md }} />
+      {/* ====== 댓글 카드 ====== */}
+      <Card style={{ padding: spacing.lg, backgroundColor: colors.background.light }}>
+        <Text style={[typography.h4, { color: colors.text.primary, marginBottom: spacing.sm }]}>댓글</Text>
 
-      {/* 댓글 리스트 */}
-      <Text style={[typography.h4, { color: colors.text.primary }]}>댓글</Text>
-      {comments.map((c) => (
-        <View key={c.id} style={{ paddingVertical: spacing.sm }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={[typography.body, { color: colors.text.primary, lineHeight: 20 }]}>{c.body}</Text>
-            <Text style={[typography.small, { color: colors.text.secondary, marginLeft: spacing.sm }]}>
-              {formatKST(c.createdAt)}  {/* ✅ 댓글 시각 */}
-            </Text>
+        {/*{comments.map((c) => (
+          <View key={c.id} style={{ paddingVertical: spacing.sm }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <Text style={[typography.body, { color: colors.text.primary, lineHeight: 20 }]}>{c.body}</Text>
+              <Text style={[typography.small, { color: colors.text.secondary, marginLeft: spacing.sm }]}>
+                {formatKST(c.createdAt)}
+              </Text>
+            </View>
           </View>
-        </View>
-      ))}
+        ))}*/}
+        {comments.map((c) => {
+          // ⬇️ attach 타입: 이어붙인 실패담 미리보기 카드
+          if (c.type === "attach" && c.attachedPostId) {
+            return (
+              <View key={c.id} style={{ paddingVertical: spacing.sm }}>
+                <Card style={{ padding: spacing.md, backgroundColor: colors.background.light }}>
+                  <Text style={[typography.caption, { color: colors.text.secondary, marginBottom: spacing.xs }]}>
+                    🔗 이어진 실패담
+                  </Text>
 
-      {/* 댓글 입력/등록 */}
-      <TextInput
-        placeholder="댓글 남기기"
-        value={comment}
-        onChangeText={setComment}
-        style={{
-          borderWidth: 1,
-          borderColor: colors.gray[300],
-          padding: spacing.md,
-          borderRadius: borderRadius.md,
-          color: colors.text.primary,
-          backgroundColor: colors.background.light,
-        }}
-      />
-      <Button
-        title={busy ? "등록 중..." : "등록"}
-        size="sm"
-        style={{ backgroundColor: colors.accent, borderColor: colors.accent }}
-        onPress={async () => {
-          const text = comment.trim();
-          if (!text) {
-            Alert.alert("안내", "댓글이 비어 있습니다."); // ✅ 즉시 안내
-            return;
+                  {/* 제목 */}
+                  <Text style={[typography.body, { color: colors.text.primary }]}>
+                    {c.attachedTitle}
+                  </Text>
+
+                  {/* 본문 스니펫 */}
+                  {!!c.attachedSnippet && (
+                    <Text style={[typography.bodySmall, { color: colors.text.secondary, marginTop: spacing.xs }]}>
+                      {c.attachedSnippet}
+                    </Text>
+                  )}
+
+                  {/* 핵심 교훈 박스 */}
+                  {!!c.attachedLessons && (
+                    <View
+                      style={{
+                        backgroundColor: colors.surface,
+                        padding: spacing.sm,
+                        borderRadius: borderRadius.md,
+                        marginTop: spacing.xs,
+                        borderLeftWidth: 3,
+                        borderLeftColor: colors.accent,
+                      }}
+                    >
+                      <Text style={[typography.caption, { color: colors.text.accent, fontWeight: "600" }]}>
+                        핵심 교훈
+                      </Text>
+                      <Text style={[typography.caption, { color: colors.text.accent, marginTop: 2 }]}>
+                        {c.attachedLessons}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* 이동 버튼 */}
+                  <View style={{ flexDirection: "row", columnGap: spacing.sm, marginTop: spacing.sm }}>
+                    <Button
+                      title="자세히"
+                      size="sm"
+                      variant="secondary"
+                      onPress={() => router.push(`/post/${c.attachedPostId}` as any)}
+                    />
+                  </View>
+                </Card>
+              </View>
+            );
           }
-          setBusy(true);
-          try {
-            await ensureAnonSignIn();      // ✅ 로그인 보장
-            await addComment(post.id, text);
-            setComment("");
-          } catch (e: any) {
-            Alert.alert("오류", e?.message ?? "댓글 실패");
-          } finally {
-            setBusy(false);
-          }
-        }}
-      />
+
+          // ⬇️ 기본: 텍스트 댓글
+          return (
+            <View key={c.id} style={{ paddingVertical: spacing.sm }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={[typography.body, { color: colors.text.primary, lineHeight: 20 }]}>
+                  {c.body}
+                </Text>
+                <Text style={[typography.small, { color: colors.text.secondary, marginLeft: spacing.sm }]}>
+                  {formatKST(c.createdAt)}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+
+        <TextInput
+          placeholder="댓글 남기기"
+          value={comment}
+          onChangeText={setComment}
+          style={{
+            borderWidth: 1,
+            borderColor: colors.gray[300],
+            padding: spacing.md,
+            borderRadius: borderRadius.md,
+            color: colors.text.primary,
+            backgroundColor: colors.background.light,
+            marginTop: spacing.sm,
+          }}
+        />
+        <Button
+          title={busy ? "등록 중..." : "등록"}
+          size="sm"
+          style={{ backgroundColor: colors.accent, borderColor: colors.accent, marginTop: spacing.xs }}
+          onPress={async () => {
+            const text = comment.trim();
+            if (!text) {
+              Alert.alert("안내", "댓글이 비어 있습니다.");
+              return;
+            }
+            setBusy(true);
+            try {
+              await ensureAnonSignIn();
+              await addComment(post.id, text);
+              setComment("");
+            } catch (e: any) {
+              Alert.alert("오류", e?.message ?? "댓글 실패");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      </Card>
+
+      {/* ====== (예고) 붙이기로 이어지는 작은 실패들 영역 ====== */}
+      <Card style={{ padding: spacing.lg, backgroundColor: colors.background.light }}>
+        <Text style={[typography.bodySmall, { color: colors.text.secondary }]}>
+          🔗 곧 여기에 “붙이기”로 이어지는 작은 실패들이 표시됩니다.
+        </Text>
+      </Card>
     </View>
   );
 }
