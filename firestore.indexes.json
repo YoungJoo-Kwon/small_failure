@@ -1,0 +1,28 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "attaches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dstPostId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "bookmarks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

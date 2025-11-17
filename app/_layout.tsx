@@ -1,24 +1,64 @@
 import { Stack } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useFonts } from "expo-font";
 import { ensureAnonSignIn } from "../src/lib/auth";
+import { ensureProfileSeed } from "../src/lib/profiles";
+import { ThemeProvider } from "../src/contexts/ThemeContext";
+import { SettingsProvider } from "../src/contexts/SettingsContext";
+import { OnboardingProvider, useOnboarding } from "../src/contexts/OnboardingContext";
+
+function AppStack() {
+  const { loading, completed } = useOnboarding();
+
+  if (loading) return null;
+
+  if (!completed) {
+    return (
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="onboarding/index" options={{ headerShown: false }} />
+      </Stack>
+    );
+  }
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="explore" />
+      <Stack.Screen name="care" />
+      <Stack.Screen name="settings" />
+    </Stack>
+  );
+}
 
 export default function RootLayout() {
   const [loaded] = useFonts({
     'GowunDodum-Regular': require("../assets/fonts/GowunDodum-Regular.ttf"),
   });
+
+  const bootedRef = useRef(false);
+
   useEffect(() => {
-    // 앱 시작 시 익명 로그인 보장
-    ensureAnonSignIn().catch(console.error);
+    (async () => {
+      if (bootedRef.current) return;
+      bootedRef.current = true;
+      try {
+        await ensureAnonSignIn();
+        await ensureProfileSeed();
+      } catch (e) {
+        console.error("[boot] profile seed failed:", e);
+      }
+    })();
   }, []);
 
   if (!loaded) return null;
 
   return (
-    <Stack screenOptions={{ headerTitle: "작은 실패 갤러리" }}>
-      <Stack.Screen name="index" options={{ title: "피드" }} />
-      <Stack.Screen name="new" options={{ title: "새 글" }} />
-      <Stack.Screen name="post/[id]" options={{ title: "상세" }} />
-    </Stack>
+    <OnboardingProvider>
+      <ThemeProvider>
+        <SettingsProvider>
+          <AppStack />
+        </SettingsProvider>
+      </ThemeProvider>
+    </OnboardingProvider>
   );
 }

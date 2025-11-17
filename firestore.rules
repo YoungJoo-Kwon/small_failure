@@ -1,44 +1,262 @@
-// Firebase Console > Firestore > Rules 탭에 붙여 넣기
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ---------- 공통 유틸 ----------
+    function isAuthed() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isAuthed() && request.auth.uid == uid;
+    }
+
+    // 문자열 유효성: 2~20자, 허용문자(한글/영문소문자/숫자/._-)
+    function validName(s) {
+      return s is string
+        && s.size() >= 2
+        && s.size() <= 20
+        && s.matches('^[a-z0-9._\\-가-힣]{2,20}$');
+    }
+
+    // 금칙어(간단 예시): 필요 시 확장
+    function notBlocked(s) {
+      return !(s.lower().matches('.*(시발|fuck|sex|admin|운영자).*'));
+    }
+
+    // 닉네임 변경 쿨다운 (기본 7일)
+    function cooldownOk(lastTs, days) {
+      return lastTs == null || request.time >= lastTs + duration.value(days, 'd');
+    }
+
+    // 카운트 필드 변경 금지(소유자 일반 업데이트 시)
+    function noCountFieldChanged() {
+      return !resource.data.diff(request.resource.data).changedKeys()
+        .hasAny(['likeCount', 'commentCount', 'attachCount']);
+    }
+
+    // 카운트 필드만 안전하게 증감하는 업데이트인지 확인
+    function isValidCountUpdate() {
+      let diff = resource.data.diff(request.resource.data);
+      let changed = diff.changedKeys();
+      return changed.size() > 0
+        && changed.hasOnly(['likeCount', 'commentCount', 'attachCount'])
+        && validCounterDelta(diff, 'likeCount')
+        && validCounterDelta(diff, 'commentCount')
+        && validCounterDelta(diff, 'attachCount');
+    }
+
+    function validCounterDelta(diff, field) {
+      return !diff.changedKeys().hasAny([field]) ||
+        (
+          request.resource.data[field] is int
+          && resource.data[field] is int
+          && request.resource.data[field] >= 0
+          && (
+            request.resource.data[field] == resource.data[field] + 1
+            || request.resource.data[field] == resource.data[field] - 1
+          )
+        );
+    }
+
+    // posts 생성 유효성(최소)
+    function isValidPostCreate() {
+      return request.resource.data.title is string
+          && request.resource.data.body is string
+          && request.resource.data.lessons is string
+          && request.resource.data.createdAt != null
+          && request.resource.data.authorId == request.auth.uid;
+    }
+
+    // comments 생성 유효성:
+    // - 기본(text): type 미지정 또는 "text" → body 필수
+    // - attach: type == "attach" → body 없어도 허용
+    function isValidCommentCreate() {
+      let d = request.resource.data;
+      let isAttach = (d.type is string) && (d.type == "attach");
+      let isText = !(d.type is string) || (d.type == "text") || (d.type == "");
+      return d.postId is string
+        && d.authorId is string
+        && d.createdAt != null
+        && (
+              (isAttach) ||
+              (isText && d.body is string)
+           );
+    }
+
+    // ---------- posts ----------
     match /posts/{postId} {
       allow read: if true;
-      allow create: if request.auth != null
-        && request.resource.data.title is string
-        && request.resource.data.body is string
-        && request.resource.data.lessons is string
-        && request.resource.data.createdAt != null;
-      allow update, delete: if request.auth != null
-        && resource.data.authorId == request.auth.uid;
-      
-      // likes 서브컬렉션 권한 추가
+
+      // 생성: 로그인 + 필수필드 + authorId == 본인
+      allow create: if isAuthed() && isValidPostCreate();
+
+      // 수정: 소유자만, 카운트 필드 금지
+      allow update: if (isOwner(resource.data.authorId) && noCountFieldChanged()) || (isAuthed() && isValidCountUpdate());
+
+      // 삭제: 소유자만
+      allow delete: if isOwner(resource.data.authorId);
+
+      // likes 서브컬렉션(개별 사용자 토글)
       match /likes/{userId} {
         allow read: if true;
-        allow create, delete: if request.auth != null && request.auth.uid == userId;
+        allow create, delete: if isAuthed() && request.auth.uid == userId;
       }
     }
 
+    // ---------- comments ----------
     match /comments/{commentId} {
       allow read: if true;
-      allow create: if request.auth != null
-        && request.resource.data.postId is string
-        && request.resource.data.body is string;
-      allow update, delete: if request.auth != null
-        && resource.data.authorId == request.auth.uid;
+
+      // 생성: 로그인 + 유효성
+      allow create: if isAuthed() && isValidCommentCreate();
+
+      // 수정/삭제: 작성자만
+      allow update, delete: if isOwner(resource.data.authorId);
     }
 
+    // ---------- attaches (엣지 전용 컬렉션) ----------
+    // 각 도큐먼트는 하나의 "붙이기" 관계(src → dst)를 의미
+    match /attaches/{edgeId} {
+      allow read: if true;
+
+      // 생성: 로그인 + 필수 필드 + 본인 작성 + 자기 글 붙이기 금지
+      allow create: if isAuthed()
+        && request.resource.data.srcPostId is string
+        && request.resource.data.dstPostId is string
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.createdAt != null
+        && request.resource.data.srcPostId != request.resource.data.dstPostId;
+
+      // 삭제: 작성자만
+      allow delete: if isOwner(resource.data.authorId);
+
+      // 업데이트는 금지(정합성 위해)
+      allow update: if false;
+    }
+
+    // ---------- reports ----------
     match /reports/{reportId} {
-      allow read: if false; // 운영자 전용(대시보드로만)
-      allow create: if request.auth != null
+      allow read: if false; // 운영자 전용
+      allow create: if isAuthed()
         && request.resource.data.targetType in ['post','comment']
-        && request.resource.data.reason is string;
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.createdAt != null;
     }
 
+    // ---------- nicknames (무료 플랜 핵심: 인덱스/중복 방지) ----------
+    // 문서 ID == 닉네임(정규화된 문자열, 소문자/허용문자만)
+    // 데이터: { ownerUid, createdAt, updatedAt }
+    match /nicknames/{handle} {
+      allow read: if true;
+
+      // 점유(생성): 본인만, 없을 때만, 허용문자 & 금칙어 통과
+      allow create: if isAuthed()
+        && !exists(/databases/$(database)/documents/nicknames/$(handle))
+        && request.resource.data.ownerUid == request.auth.uid
+        && validName(handle)
+        && notBlocked(handle);
+
+      // 반납(삭제): 소유자만
+      allow delete: if isAuthed()
+        && resource.data.ownerUid == request.auth.uid;
+
+      // 제한적 업데이트(선택): 소유자만
+      allow update: if isAuthed()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // ---------- profiles (SSoT) ----------
+    match /profiles/{uid} {
+      allow read: if true;
+
+      // 생성: 본인만. 시딩 시 닉네임을 함께 쓰는 경우,
+      // nicknames/{displayName}.ownerUid == 본인 인지 확인
+      allow create: if isOwner(uid)
+        && (
+            // 닉네임 없이 생성 허용(시딩을 두 단계로 할 때)
+            !(request.resource.data.displayName is string)
+            ||
+            (
+              validName(request.resource.data.displayName)
+              && notBlocked(request.resource.data.displayName)
+              && exists(/databases/$(database)/documents/nicknames/$(request.resource.data.displayName))
+              && get(/databases/$(database)/documents/nicknames/$(request.resource.data.displayName)).data.ownerUid
+                   == request.auth.uid
+            )
+        )
+        // 운영 필드 범위(선택)
+        && (
+          !(request.resource.data.changeCooldownDays is int)
+          || (
+              request.resource.data.changeCooldownDays >= 1
+              && request.resource.data.changeCooldownDays <= 60
+          )
+        );
+
+      // 업데이트/삭제: 본인만
+      // 닉네임 변경 시에만 유효성+쿨다운+소유권 검사.
+      // 닉네임 미변경이면(그 외 필드만 수정) 그대로 허용.
+      allow update: if isOwner(uid)
+        && (
+          // displayName이 변경되지 않은 경우 (기존 값과 같거나, 변경된 키에 displayName이 없음)
+          !('displayName' in request.resource.data)
+          || request.resource.data.displayName == resource.data.displayName
+          || (
+            // 닉네임을 바꾸는 경우:
+            'displayName' in request.resource.data
+            && request.resource.data.displayName != resource.data.displayName
+            && validName(request.resource.data.displayName)
+            && notBlocked(request.resource.data.displayName)
+            && cooldownOk(resource.data.lastNickChangeAt,
+                          (resource.data.changeCooldownDays is int ? resource.data.changeCooldownDays : 7))
+            && exists(/databases/$(database)/documents/nicknames/$(request.resource.data.displayName))
+            && get(/databases/$(database)/documents/nicknames/$(request.resource.data.displayName)).data.ownerUid
+                 == request.auth.uid
+          )
+        )
+        // 운영 필드 안전범위 (변경되지 않았거나 유효한 범위 내)
+        && (
+          !('changeCooldownDays' in request.resource.data)
+          || request.resource.data.changeCooldownDays == resource.data.changeCooldownDays
+          || (
+              request.resource.data.changeCooldownDays is int
+              && request.resource.data.changeCooldownDays >= 1
+              && request.resource.data.changeCooldownDays <= 60
+          )
+        );
+
+      allow delete: if isOwner(uid);
+    }
+
+    // ---------- handles (서버 전용, 현재 미사용) ----------
+    match /handles/{handle} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---------- users (기존) ----------
     match /users/{userId} {
       allow read: if false;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write: if isOwner(userId);
+    }
+
+    // ---------- bookmarks ----------
+    match /bookmarks/{bookmarkId} {
+      // 읽기: 본인만
+      allow read: if isAuthed() && resource.data.userId == request.auth.uid;
+      
+      // 생성: 로그인 + 본인 userId + postId 필수
+      allow create: if isAuthed()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.postId is string
+        && request.resource.data.createdAt != null;
+      
+      // 삭제: 본인만
+      allow delete: if isAuthed() && resource.data.userId == request.auth.uid;
+      
+      // 업데이트 금지
+      allow update: if false;
     }
   }
 }

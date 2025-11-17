@@ -1,28 +1,26 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, Alert, Image, TouchableOpacity } from "react-native";
-import * as ImagePicker from "expo-image-picker";
+import { View, Text, ScrollView, Alert, Switch, TouchableOpacity } from "react-native";
 import { createPost } from "../src/lib/posts";
 import { ensureAnonSignIn } from "../src/lib/auth";
 import { auth } from "../src/lib/firebase";
 import Input from "../src/components/common/Input";
 import Button from "../src/components/common/Button";
 import Card from "../src/components/common/Card";
-import { colors, typography, spacing } from "../src/styles/theme";
+import { useTheme } from "../src/contexts/ThemeContext";
+import { useRouter } from "expo-router";
+import AppHeader from "../src/components/AppHeader";
 
 export default function NewPostScreen() {
+  const router = useRouter();
+  const { colors, typography, spacing } = useTheme();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [lessons, setLessons] = useState("");
   const [tags, setTags] = useState("");
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [suggestedTagsUsed, setSuggestedTagsUsed] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-
-  async function pickImage() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") return Alert.alert("사진 접근 권한이 필요합니다.");
-    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
-    if (!result.canceled) setImageUri(result.assets[0].uri);
-  }
+  const [savePrivate, setSavePrivate] = useState(false);
+  const [requestType, setRequestType] = useState<"공감구함" | "조언구함" | "혼쭐내줘">("공감구함");
 
   async function submit() {
     if (!title || !body || !lessons) {
@@ -31,16 +29,30 @@ export default function NewPostScreen() {
     setBusy(true);
     try {
       await ensureAnonSignIn();
+      
+      // ✅ uid 보장 확인
+      const uid = auth.currentUser?.uid ?? null;
+      if (!uid) {
+        throw new Error("로그인 세션이 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+      }
+      
       await createPost({
         title,
         body,
         lessons,
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-        imageUri,
+        status: savePrivate ? "hidden" : "active",
+        visibility: savePrivate ? "private" : "public",
+        requestType,
       });
-      Alert.alert("게시 완료!", "실패담이 성공적으로 공유되었어요! 🎉");
-      setTitle(""); setBody(""); setLessons(""); setTags(""); setImageUri(null);
+
+      // 폼 초기화
+      setTitle(""); setBody(""); setLessons(""); setTags(""); setSuggestedTagsUsed([]); setSavePrivate(false); setRequestType("공감구함");
+      
+      // Alert 없이 바로 홈으로 이동
+      router.replace("/");
     } catch (e: any) {
+      console.error("createPost failed:", e?.code, e?.message, e);
       Alert.alert("오류", e?.message ?? "등록 실패");
     } finally {
       setBusy(false);
@@ -50,17 +62,42 @@ export default function NewPostScreen() {
   const suggestedTags = ["시험", "프로젝트", "인간관계", "시간관리", "커뮤니케이션", "계획"];
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.background.surface }}>
-      <View style={{ padding: spacing.lg }}>
-        {/* 헤더 */}
-        <View style={{ marginBottom: spacing.xl }}>
-          <Text style={[typography.h2, { color: colors.text.primary, marginBottom: spacing.sm }]}>
-            실패담 공유하기
+    <View style={{ flex: 1, backgroundColor: colors.background.surface }}>
+      <AppHeader title="실패담 공유하기" subtitle="실패도 성장의 밑거름이에요. 안전하게 털어놓아보세요! 💪" />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg }}>
+        {/* 공개 범위 & 글머리 */}
+        <Card style={{ marginBottom: spacing.lg, padding: spacing.md }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={[typography.bodySmall, { color: colors.text.primary, marginRight: spacing.xs }]}>
+                비공개
+              </Text>
+              <Switch
+                value={savePrivate}
+                onValueChange={setSavePrivate}
+                trackColor={{ false: colors.gray[300], true: colors.accent }}
+                thumbColor={savePrivate ? colors.primary : colors.gray[400]}
+              />
+            </View>
+          </View>
+
+          {/* 글머리 선택 */}
+          <View style={{ flexDirection: "row", columnGap: spacing.sm, marginTop: spacing.sm }}>
+            {(["공감구함", "조언구함", "혼쭐내줘"] as const).map((opt) => (
+              <Button
+                key={opt}
+                title={opt}
+                size="sm"
+                variant={requestType === opt ? "primary" : "secondary"}
+                style={requestType === opt ? { backgroundColor: colors.accent, borderColor: colors.accent } : undefined}
+                onPress={() => setRequestType(opt)}
+              />
+            ))}
+          </View>
+          <Text style={[typography.caption, { color: colors.text.secondary }]}>
+            본문까지 기록 · 글머리로 글의 의도를 표시해 주세요
           </Text>
-          <Text style={[typography.body, { color: colors.text.secondary }]}>
-            실패도 성장의 밑거름이에요. 안전하게 털어놓아보세요! 💪
-          </Text>
-        </View>
+        </Card>
 
         {/* 입력 폼 */}
         <Card style={{ marginBottom: spacing.lg }}>
@@ -103,71 +140,38 @@ export default function NewPostScreen() {
               추천 태그:
             </Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-              {suggestedTags.map((tag) => (
-                <TouchableOpacity
-                  key={tag}
-                  onPress={() => {
-                    const currentTags = tags ? tags.split(',').map(t => t.trim()) : [];
-                    if (!currentTags.includes(tag)) {
-                      setTags(tags ? `${tags}, ${tag}` : tag);
-                    }
-                  }}
-                  style={{
-                    backgroundColor: colors.secondary,
-                    paddingHorizontal: spacing.sm,
-                    paddingVertical: spacing.xs,
-                    borderRadius: 16,
-                    marginRight: spacing.sm,
-                    marginBottom: spacing.sm,
-                  }}
-                >
-                  <Text style={[typography.caption, { color: colors.text.primary }]}>
-                    + {tag}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {suggestedTags.map((tag) => {
+                const isUsed = suggestedTagsUsed.includes(tag);
+                return (
+                  <TouchableOpacity
+                    key={tag}
+                    onPress={() => {
+                      if (!isUsed) {
+                        setTags(tags ? `${tags}, ${tag}` : tag);
+                        setSuggestedTagsUsed([...suggestedTagsUsed, tag]);
+                      }
+                    }}
+                    disabled={isUsed}
+                    style={{
+                      backgroundColor: isUsed ? colors.surface : colors.secondary,
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: spacing.xs,
+                      borderRadius: 16,
+                      marginRight: spacing.sm,
+                      marginBottom: spacing.sm,
+                      opacity: isUsed ? 0.5 : 1,
+                    }}
+                  >
+                    <Text style={[typography.caption, { color: colors.text.primary }]}>
+                      {isUsed ? '✓ ' : '+ '}{tag}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 
-          {/* 이미지 선택 */}
-          <View style={{ marginTop: spacing.lg }}>
-            <Text style={[typography.bodySmall, { color: colors.text.secondary, marginBottom: spacing.sm }]}>
-              사진 (선택사항)
-            </Text>
-            <Button
-              title={imageUri ? "다른 사진 선택" : "📷 사진 추가"}
-              variant="secondary"
-              onPress={pickImage}
-              style={{ marginBottom: spacing.md }}
-            />
-            
-            {imageUri && (
-              <View style={{ marginTop: spacing.sm }}>
-                <Image
-                  source={{ uri: imageUri }}
-                  style={{
-                    width: '100%',
-                    height: 200,
-                    borderRadius: 8,
-                  }}
-                  resizeMode="cover"
-                />
-                <TouchableOpacity
-                  onPress={() => setImageUri(null)}
-                  style={{
-                    position: 'absolute',
-                    top: 8,
-                    right: 8,
-                    backgroundColor: 'rgba(0,0,0,0.5)',
-                    borderRadius: 12,
-                    padding: 4,
-                  }}
-                >
-                  <Text style={{ color: 'white', fontSize: 16 }}>×</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+          {/* 사진 업로드는 현재 버전에서 비활성화되었습니다. */}
         </Card>
 
         {/* 제출 버튼 */}
@@ -193,9 +197,7 @@ export default function NewPostScreen() {
             💡 팁: 솔직하고 구체적으로 작성할수록 더 많은 공감과 조언을 받을 수 있어요!
           </Text>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
-
-console.log("current uid for upload:", auth.currentUser?.uid);

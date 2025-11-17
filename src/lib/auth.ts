@@ -1,6 +1,6 @@
 import { auth, db } from "./firebase";
 import { signInAnonymously, updateProfile } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 
 export async function ensureAnonSignIn() {
   if (auth.currentUser) return auth.currentUser;
@@ -13,4 +13,24 @@ export async function ensureAnonSignIn() {
     createdAt: serverTimestamp()
   }, { merge: true });
   return user;
+}
+
+/**
+ * 현재 사용자가 관리자인지 확인합니다.
+ * profiles/{uid}의 isAdmin 필드를 확인합니다.
+ */
+export async function isAdmin(): Promise<boolean> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return false;
+  
+  try {
+    const profRef = doc(db, "profiles", uid);
+    const snap = await getDoc(profRef);
+    if (!snap.exists()) return false;
+    const data = snap.data();
+    return data?.isAdmin === true;
+  } catch (e) {
+    console.error("[isAdmin] Error checking admin status:", e);
+    return false;
+  }
 }

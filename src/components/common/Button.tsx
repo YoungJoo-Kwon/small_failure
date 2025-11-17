@@ -1,6 +1,6 @@
 import React from 'react';
 import { TouchableOpacity, Text, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../../styles/theme';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'comfort' | 'growth';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -29,6 +29,8 @@ export default function Button({
   style,
   textStyle,
 }: ButtonProps) {
+  const { colors, typography, spacing, borderRadius } = useTheme();
+
   const getVariantStyles = () => {
     switch (variant) {
       case 'primary':
@@ -125,6 +127,7 @@ export default function Button({
           alignItems: 'center',
           justifyContent: 'center',
           opacity: disabled ? 0.6 : 1,
+          pointerEvents: (disabled || loading) ? 'none' : 'auto',
         },
         variantStyles,
         sizeStyles,

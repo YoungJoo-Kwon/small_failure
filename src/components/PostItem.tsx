@@ -1,10 +1,14 @@
-import React from 'react';
-import { View, Text, Pressable, Image } from "react-native";
+import React, { useState, useEffect } from 'react';
+import { View, Text, Pressable, Image, TouchableOpacity, Alert } from "react-native";
 import { Link } from "expo-router";
-import { Post } from "../lib/posts";
+import { Post, toggleLikeRobust } from "../lib/posts";
 import { formatKST } from "../lib/datetime";
-import { colors, typography, spacing, borderRadius } from "../styles/theme";
+import { useTheme } from "../contexts/ThemeContext";
 import Card from "./common/Card";
+import Avatar from "./Avatar";
+import { listenMyLike } from "../lib/likes";
+import { toggleBookmark, listenBookmarkStatus } from "../lib/bookmarks";
+import { Ionicons } from "@expo/vector-icons";
 
 interface PostItemProps {
   post: Post;
@@ -12,7 +16,68 @@ interface PostItemProps {
 }
 
 export default function PostItem({ post, mode = 'light' }: PostItemProps) {
+  const { colors, typography, spacing, borderRadius } = useTheme();
   const created = formatKST(post.createdAt);
+  const head = post.requestType ?? "공감구함";
+  const headLabel = `[${head}] `;
+
+  // 공감 상태
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(post.likeCount ?? 0);
+
+  // 북마크 상태
+  const [bookmarked, setBookmarked] = useState(false);
+
+  // 공감 상태 구독
+  useEffect(() => {
+    if (!post.id) return;
+    const unsub = listenMyLike(post.id, setLiked);
+    return () => unsub();
+  }, [post.id]);
+
+  // 북마크 상태 구독
+  useEffect(() => {
+    if (!post.id) return;
+    const unsub = listenBookmarkStatus(post.id, setBookmarked);
+    return () => unsub();
+  }, [post.id]);
+
+  // 공감 버튼 핸들러
+  const handleLike = async (e: any) => {
+    e?.stopPropagation?.();
+    if (!post.id) return;
+    
+    const prevLiked = liked;
+    const prevCount = likeCount;
+    
+    // 낙관적 업데이트
+    setLiked(!liked);
+    setLikeCount(prev => liked ? prev - 1 : prev + 1);
+    
+    try {
+      await toggleLikeRobust(post.id);
+      // 상태는 실시간 구독으로 자동 업데이트됨
+    } catch (e) {
+      console.error("Like failed:", e);
+      // 에러 시 원래 상태로 복구
+      setLiked(prevLiked);
+      setLikeCount(prevCount);
+    }
+  };
+
+  // 북마크 버튼 핸들러
+  const handleBookmark = async (e: any) => {
+    e?.stopPropagation?.();
+    if (!post.id) return;
+    
+    try {
+      await toggleBookmark(post.id);
+      // 상태는 실시간 구독으로 자동 업데이트됨
+    } catch (e) {
+      console.error("Bookmark failed:", e);
+      Alert.alert("오류", "북마크 처리에 실패했습니다.");
+    }
+  };
 
   if (mode === 'light') {
     return (
@@ -25,32 +90,29 @@ export default function PostItem({ post, mode = 'light' }: PostItemProps) {
             }}
             onPress={() => {}}
           >
-            {/* 썸네일 자리 + 제목 */}
+            {/* 작성자 아바타 + 제목 */}
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.sm }}>
-              {/* 썸네일 자리 (향후 이미지 추가 예정) */}
-              <View style={{
-                width: 60,
-                height: 60,
-                backgroundColor: colors.surface,
-                borderRadius: borderRadius.md,
-                marginRight: spacing.md,
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: colors.gray[200],
-              }}>
-                <Text style={{ fontSize: 24 }}>😅</Text>
-              </View>
+              {/* 작성자 아바타 */}
+              <Avatar 
+                authorId={post.authorId}
+                snapshotAvatarUrl={post.authorAvatarUrl}
+                size={50}
+                style={{
+                  marginRight: spacing.md,
+                  borderWidth: 1,
+                  borderColor: colors.gray[300],
+                }}
+              />
               
               <View style={{ flex: 1 }}>
                 <Text 
                   style={[typography.h4, { color: colors.text.primary }]} 
                   numberOfLines={2}
                 >
-                  {post.title}
+                  {headLabel}{post.title}
                 </Text>
-                <Text style={[typography.caption, { color: colors.text.secondary }]}>
-                  {created}
+                <Text style={[typography.caption, { color: colors.text.secondary, marginTop: spacing.xs }]}>
+                  {post.authorNickname ?? "익명의 실패러"} · {created}
                 </Text>
               </View>
             </View>
@@ -102,19 +164,40 @@ export default function PostItem({ post, mode = 'light' }: PostItemProps) {
               </View>
             )}
 
-            {/* 통계 */}
+            {/* 통계 및 액션 버튼 */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ flexDirection: 'row', gap: spacing.md }}>
-                <Text style={[typography.caption, { color: colors.text.secondary }]}>
-                  ❤️ {post.likeCount ?? 0}
-                </Text>
+              <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center' }}>
+                <TouchableOpacity 
+                  onPress={handleLike}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}
+                >
+                  <Ionicons 
+                    name={liked ? "heart" : "heart-outline"} 
+                    size={18} 
+                    color={liked ? (colors.error || "#f87171") : colors.text.secondary} 
+                  />
+                  <Text style={[typography.caption, { 
+                    color: liked ? (colors.error || "#f87171") : colors.text.secondary 
+                  }]}>
+                    {likeCount}
+                  </Text>
+                </TouchableOpacity>
                 <Text style={[typography.caption, { color: colors.text.secondary }]}>
                   💬 {post.commentCount ?? 0}
                 </Text>
               </View>
-              <Text style={[typography.small, { color: colors.text.disabled }]}>
-                자세히 보기 →
-              </Text>
+              <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
+                <TouchableOpacity onPress={handleBookmark}>
+                  <Ionicons 
+                    name={bookmarked ? "bookmark" : "bookmark-outline"} 
+                    size={18} 
+                    color={bookmarked ? colors.accent : colors.text.secondary} 
+                  />
+                </TouchableOpacity>
+                <Text style={[typography.small, { color: colors.text.disabled }]}>
+                  자세히 보기 →
+                </Text>
+              </View>
             </View>
           </Card>
         </Pressable>
@@ -134,13 +217,26 @@ export default function PostItem({ post, mode = 'light' }: PostItemProps) {
           onPress={() => {}}
         >
           {/* 헤더 */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.md }}>
-            <Text style={[typography.h3, { color: colors.text.primary, flex: 1 }]} numberOfLines={2}>
-              {post.title}
-            </Text>
-            <Text style={[typography.caption, { color: colors.text.secondary, marginLeft: spacing.sm }]}>
-              {created}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md }}>
+            {/* 작성자 아바타 */}
+            <Avatar 
+              authorId={post.authorId}
+              snapshotAvatarUrl={post.authorAvatarUrl}
+              size={40}
+              style={{
+                marginRight: spacing.sm,
+                borderWidth: 1,
+                borderColor: colors.gray[300],
+              }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.h3, { color: colors.text.primary }]} numberOfLines={2}>
+                {headLabel}{post.title}
+              </Text>
+              <Text style={[typography.caption, { color: colors.text.secondary, marginTop: spacing.xs }]}>
+                {post.authorNickname ?? "익명의 실패러"} · {created}
+              </Text>
+            </View>
           </View>
 
           {/* 본문 */}
@@ -217,13 +313,22 @@ export default function PostItem({ post, mode = 'light' }: PostItemProps) {
             borderTopWidth: 1,
             borderTopColor: colors.gray[200],
           }}>
-            <View style={{ flexDirection: 'row', gap: spacing.lg }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={{ fontSize: 16, marginRight: spacing.xs }}>❤️</Text>
-                <Text style={[typography.bodySmall, { color: colors.text.secondary }]}>
-                  {post.likeCount ?? 0}
+            <View style={{ flexDirection: 'row', gap: spacing.lg, alignItems: 'center' }}>
+              <TouchableOpacity 
+                onPress={handleLike}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}
+              >
+                <Ionicons 
+                  name={liked ? "heart" : "heart-outline"} 
+                  size={18} 
+                  color={liked ? (colors.error || "#f87171") : colors.text.secondary} 
+                />
+                <Text style={[typography.bodySmall, { 
+                  color: liked ? (colors.error || "#f87171") : colors.text.secondary 
+                }]}>
+                  {likeCount}
                 </Text>
-              </View>
+              </TouchableOpacity>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Text style={{ fontSize: 16, marginRight: spacing.xs }}>💬</Text>
                 <Text style={[typography.bodySmall, { color: colors.text.secondary }]}>
@@ -231,9 +336,18 @@ export default function PostItem({ post, mode = 'light' }: PostItemProps) {
                 </Text>
               </View>
             </View>
-            <Text style={[typography.bodySmall, { color: colors.accent }]}>
-              자세히 보기 →
-            </Text>
+            <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
+              <TouchableOpacity onPress={handleBookmark}>
+                <Ionicons 
+                  name={bookmarked ? "bookmark" : "bookmark-outline"} 
+                  size={18} 
+                  color={bookmarked ? colors.accent : colors.text.secondary} 
+                />
+              </TouchableOpacity>
+              <Text style={[typography.bodySmall, { color: colors.accent }]}>
+                자세히 보기 →
+              </Text>
+            </View>
           </View>
         </Card>
       </Pressable>

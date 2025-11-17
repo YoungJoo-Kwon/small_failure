@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, TextInput, Text, ViewStyle, TextStyle } from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../../styles/theme';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export type InputVariant = 'default' | 'error' | 'success';
 
@@ -36,23 +36,24 @@ export default function Input({
   disabled = false,
 }: InputProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const { colors, typography, spacing, borderRadius } = useTheme();
 
   const getVariantStyles = () => {
     if (error || variant === 'error') {
       return {
-        borderColor: colors.failure[400],
-        backgroundColor: colors.failure[50],
+        borderColor: colors.error,
+        backgroundColor: 'rgba(231, 76, 60, 0.08)',
       };
     }
     if (success || variant === 'success') {
       return {
-        borderColor: colors.growth[400],
-        backgroundColor: colors.growth[50],
+        borderColor: colors.success,
+        backgroundColor: 'rgba(39, 174, 96, 0.08)',
       };
     }
     if (isFocused) {
       return {
-        borderColor: colors.primary[400],
+        borderColor: colors.accent,
         backgroundColor: colors.background.light,
       };
     }
@@ -69,8 +70,8 @@ export default function Input({
   };
 
   const getStatusColor = () => {
-    if (error) return colors.failure[500];
-    if (success) return colors.growth[500];
+    if (error) return colors.error;
+    if (success) return colors.success;
     return colors.gray[500];
   };
 

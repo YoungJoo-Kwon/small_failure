@@ -1,20 +1,7 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+// ⚠️ Expo Router를 사용하는 경우 이 파일은 사용되지 않습니다.
+// 실제 앱 엔트리는 app/_layout.tsx입니다.
+// 이 파일은 빈 상태로 유지하거나 제거해도 됩니다.
 
 export default function App() {
-  return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
+  return null;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ViewStyle } from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../../styles/theme';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export type ViewMode = 'light' | 'detailed';
 
@@ -11,6 +11,8 @@ interface ModeToggleProps {
 }
 
 export default function ModeToggle({ mode, onModeChange, style }: ModeToggleProps) {
+  const { colors, typography, spacing, borderRadius } = useTheme();
+
   return (
       <View
         style={[
@@ -46,7 +48,7 @@ export default function ModeToggle({ mode, onModeChange, style }: ModeToggleProp
             color: mode === 'light' ? colors.text.inverse : colors.text.secondary,
           }}
         >
-          🔘 짧게 보기
+          🔘 짧게
         </Text>
       </TouchableOpacity>
       
@@ -71,7 +73,7 @@ export default function ModeToggle({ mode, onModeChange, style }: ModeToggleProp
             color: mode === 'detailed' ? colors.text.inverse : colors.text.secondary,
           }}
         >
-          🔘 자세히 보기
+          🔘 자세히
         </Text>
       </TouchableOpacity>
     </View>

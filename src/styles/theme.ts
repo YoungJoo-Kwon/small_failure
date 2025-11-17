@@ -1,6 +1,8 @@
 // 작은 실패 갤러리 디자인 시스템
 // 기본 테마: #ffffff #faff00 #c4c087 #f6f2cb #005248
 
+import { Platform } from 'react-native';
+
 export const themes = {
   default: {
     background: '#ffffff',    // 배경색
@@ -196,28 +198,31 @@ export const borderRadius = {
   full: 9999,
 };
 
+// shadow 스타일: 웹에서는 boxShadow 사용, 네이티브에서는 shadow* props 사용
+const createShadow = (offset: { width: number; height: number }, radius: number, opacity: number, elevation: number) => {
+  if (Platform.OS === 'web') {
+    // 웹: boxShadow 사용 (경고 제거)
+    const { width, height } = offset;
+    return {
+      boxShadow: `${width}px ${height}px ${radius}px rgba(0, 0, 0, ${opacity})`,
+      elevation, // Android를 위한 fallback
+    };
+  } else {
+    // 네이티브: shadow* props 사용
+    return {
+      shadowColor: '#000',
+      shadowOffset: offset,
+      shadowOpacity: opacity,
+      shadowRadius: radius,
+      elevation,
+    };
+  }
+};
+
 export const shadows = {
-  sm: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  md: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  lg: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
+  sm: createShadow({ width: 0, height: 1 }, 2, 0.05, 1),
+  md: createShadow({ width: 0, height: 2 }, 4, 0.1, 2),
+  lg: createShadow({ width: 0, height: 4 }, 8, 0.15, 4),
 };
 
 // 모드별 스타일

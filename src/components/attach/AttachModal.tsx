@@ -1,12 +1,12 @@
 // components/attach/AttachModal.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, FlatList, TouchableOpacity, Modal } from "react-native";
-import { colors, typography, spacing, borderRadius } from "../../styles/theme";
+import { useTheme } from "../../contexts/ThemeContext";
 import Button from "../common/Button";
 import Card from "../common/Card";
 import { auth } from "../../lib/firebase";
 import { listenMyPosts, searchPostsByTitlePrefix } from "../../lib/posts";
-import { ensureAnonSignIn } from "../../../src/lib/auth";
+import { ensureAnonSignIn } from "../../lib/auth";
 
 type Item = { id: string; title: string; body?: string; lessons?: string; };
 
@@ -19,6 +19,7 @@ export default function AttachModal({
   excludeId?: string; // 자기 자신 제외
 }) {
   const uid = auth.currentUser?.uid ?? null;
+  const { colors, typography, spacing, borderRadius } = useTheme();
 
   const [tab, setTab] = useState<"mine"|"search"|"recent"|"paste">("mine");
   const [mine, setMine] = useState<Item[]>([]);

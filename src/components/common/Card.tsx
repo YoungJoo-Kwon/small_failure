@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, ViewStyle } from 'react-native';
-import { colors, borderRadius, shadows } from '../../styles/theme';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface CardProps {
   children: React.ReactNode;
@@ -17,6 +17,8 @@ export default function Card({
   style,
   onPress,
 }: CardProps) {
+  const { colors, borderRadius, shadows } = useTheme();
+
   const getVariantStyles = () => {
     switch (variant) {
       case 'elevated':
